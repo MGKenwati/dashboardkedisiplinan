@@ -628,7 +628,7 @@
     <div style="background: white; padding: 30px; border-radius: 15px; max-width: 400px; width: 90%;">
      <h3 style="margin-bottom: 20px; color: #495057;">🔐 Verifikasi Papi / Mami</h3>
      <form id="password-form">
-      <div class="form-group"><label for="verify-password">Masukkan Password Ayah</label> <input type="password" id="verify-password" required placeholder="Password">
+      <div class="form-group"><label for="verify-password">Masukkan Password Papi / Mami</label> <input type="password" id="verify-password" required placeholder="Password">
       </div>
       <div style="display: flex; gap: 10px; justify-content: flex-end;"><button type="button" class="btn btn-danger" onclick="closePasswordModal()">Batal</button> <button type="submit" class="btn btn-primary">Verifikasi</button>
       </div>
@@ -975,7 +975,7 @@
 
       const parentPassword = await showPasswordPrompt();
       if (parentPassword !== 'cimenG90') {
-        showToast('Password salah! Hanya Ayah yang bisa menyimpan.', 'error');
+        showToast('Password salah! Hanya Papi / Mami yang bisa menyimpan.', 'error');
         return;
       }
 
