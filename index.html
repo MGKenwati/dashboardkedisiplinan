@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Checklist Harian Anak - Tristan Khalil Athalla</title>
   <script src="/_sdk/element_sdk.js"></script>
-  <script src="/_sdk/data_sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -291,6 +290,12 @@
       box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
     }
 
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .btn-success {
       background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
       color: white;
@@ -307,6 +312,13 @@
     .btn-danger:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    .btn-success:disabled,
+    .btn-danger:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
     }
 
     .login-container {
@@ -469,6 +481,7 @@
     }
   </style>
   <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
   <script src="https://cdn.tailwindcss.com" type="text/javascript"></script>
  </head>
  <body>
@@ -552,7 +565,7 @@
         <h3>❌ Kegiatan Negatif</h3>
         <div class="checklist-items" id="checklist-negatif"></div>
        </div>
-       <div style="text-align: center; margin-top: 30px;"><button type="submit" class="btn btn-primary">Simpan Kegiatan</button>
+       <div style="text-align: center; margin-top: 30px;"><button type="submit" class="btn btn-primary" id="submit-btn">Simpan Kegiatan</button>
        </div>
       </form>
      </div>
@@ -596,7 +609,7 @@
    <div id="toast" class="toast"></div>
    <div id="loading" class="loading">
     <div class="spinner"></div>
-    <p>Menyimpan data...</p>
+    <p>Memproses data...</p>
    </div><!-- Modal Edit -->
    <div id="edit-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center;">
     <div style="background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%;">
@@ -624,13 +637,14 @@
    </div>
   </div>
   <script>
+    // Config Supabase
+    const SUPABASE_URL = 'https://gaybffstouojtacnvvyj.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdheWJmZnN0b3VvanRhY252dnlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4MTk4OTcsImV4cCI6MjA4MDM5NTg5N30.KR2Jet-HfCI5UmqUODSrWyJAjr0Tveu9XHRPsEubr2g';
+
     const defaultConfig = {
       app_title: "Checklist Harian Anak",
       dashboard_title: "Grafik Kegiatan Harian",
       input_title: "Input Kegiatan Harian",
-      kelola_title: "Kelola Kegiatan",
-      webhook_url: "https://gaybffstouojtacnvvyj.supabase.co/rest/v1/kegiatan_anak",
-      anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdheWJmZnN0b3VvanRhY252dnlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4MTk4OTcsImV4cCI6MjA4MDM5NTg5N30.KR2Jet-HfCI5UmqUODSrWyJAjr0Tveu9XHRPsEubr2g",
       primary_color: "#667eea",
       secondary_color: "#764ba2",
       positive_color: "#38ef7d",
@@ -645,14 +659,83 @@
     let allRecords = [];
     let idleTimer = null;
 
-    const dataHandler = {
-      onDataChanged(data) {
+    // Supabase API Functions
+    async function supabaseFetch(endpoint, options = {}) {
+      const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+      const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+        ...options.headers
+      };
+
+      const response = await fetch(url, {
+        ...options,
+        headers
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Supabase error: ${error}`);
+      }
+
+      return response.json();
+    }
+
+    async function loadAllData() {
+      try {
+        showLoading(true);
+        const data = await supabaseFetch('kegiatan_anak?select=*&order=created_at.desc');
         allRecords = data;
         updateDashboard();
         updateChecklistForms();
         updateKelolaLists();
+        showLoading(false);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        showToast('Gagal memuat data: ' + error.message, 'error');
+        showLoading(false);
       }
-    };
+    }
+
+    async function createRecord(record) {
+      try {
+        await supabaseFetch('kegiatan_anak', {
+          method: 'POST',
+          body: JSON.stringify(record)
+        });
+        return { success: true };
+      } catch (error) {
+        console.error('Error creating record:', error);
+        return { success: false, error: error.message };
+      }
+    }
+
+    async function updateRecord(id, updates) {
+      try {
+        await supabaseFetch(`kegiatan_anak?id=eq.${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates)
+        });
+        return { success: true };
+      } catch (error) {
+        console.error('Error updating record:', error);
+        return { success: false, error: error.message };
+      }
+    }
+
+    async function deleteRecord(id) {
+      try {
+        await supabaseFetch(`kegiatan_anak?id=eq.${id}`, {
+          method: 'DELETE'
+        });
+        return { success: true };
+      } catch (error) {
+        console.error('Error deleting record:', error);
+        return { success: false, error: error.message };
+      }
+    }
 
     async function onConfigChange(config) {
       const appTitle = config.app_title || defaultConfig.app_title;
@@ -741,10 +824,7 @@
       return new Map([
         ["app_title", config.app_title || defaultConfig.app_title],
         ["dashboard_title", config.dashboard_title || defaultConfig.dashboard_title],
-        ["input_title", config.input_title || defaultConfig.input_title],
-        ["kelola_title", config.kelola_title || defaultConfig.kelola_title],
-        ["webhook_url", config.webhook_url || defaultConfig.webhook_url],
-        ["anon_key", config.anon_key || defaultConfig.anon_key]
+        ["input_title", config.input_title || defaultConfig.input_title]
       ]);
     }
 
@@ -758,19 +838,18 @@
         });
       }
 
-      if (window.dataSdk) {
-        const initResult = await window.dataSdk.init(dataHandler);
-        if (!initResult.isOk) {
-          showToast('Gagal menginisialisasi sistem', 'error');
-        }
-      }
-
       setupTabs();
       setupFilters();
       setupForms();
       setDefaultDate();
       initChart();
       initDetailCharts();
+      
+      // Load initial data
+      await loadAllData();
+      
+      // Auto refresh every 10 seconds
+      setInterval(loadAllData, 10000);
     }
 
     function resetIdleTimer() {
@@ -894,17 +973,15 @@
         return;
       }
 
-      if (allRecords.length >= 999) {
-        showToast('Batas maksimal 999 data tercapai. Hapus beberapa data terlebih dahulu.', 'error');
-        return;
-      }
-
       const parentPassword = await showPasswordPrompt();
       if (parentPassword !== 'cimenG90') {
         showToast('Password salah! Hanya Ayah yang bisa menyimpan.', 'error');
         return;
       }
 
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Menyimpan...';
       showLoading(true);
 
       for (const checkbox of checkboxes) {
@@ -923,26 +1000,26 @@
           completed: true
         };
 
-        const result = await window.dataSdk.create(record);
-        if (!result.isOk) {
+        const result = await createRecord(record);
+        if (!result.success) {
           showLoading(false);
-          showToast('Gagal menyimpan data', 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Simpan Kegiatan';
+          showToast('Gagal menyimpan data: ' + result.error, 'error');
           return;
         }
       }
 
       showLoading(false);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Simpan Kegiatan';
       showToast('Data berhasil disimpan!', 'success');
       document.getElementById('input-form').reset();
       setDefaultDate();
+      await loadAllData();
     }
 
     async function addKegiatan(jenis) {
-      if (allRecords.length >= 999) {
-        showToast('Batas maksimal 999 data tercapai', 'error');
-        return;
-      }
-
       const namaInput = document.getElementById(`nama-${jenis}`);
       const menitInput = document.getElementById(`menit-${jenis}`);
       const nama = namaInput.value;
@@ -960,28 +1037,30 @@
         completed: false
       };
 
-      const result = await window.dataSdk.create(record);
+      const result = await createRecord(record);
       
       showLoading(false);
 
-      if (result.isOk) {
+      if (result.success) {
         showToast('Kegiatan berhasil ditambahkan!', 'success');
         namaInput.value = '';
         menitInput.value = '';
+        await loadAllData();
       } else {
-        showToast('Gagal menambahkan kegiatan', 'error');
+        showToast('Gagal menambahkan kegiatan: ' + result.error, 'error');
       }
     }
 
-    async function deleteKegiatan(record) {
+    async function deleteKegiatanById(id) {
       showLoading(true);
-      const result = await window.dataSdk.delete(record);
+      const result = await deleteRecord(id);
       showLoading(false);
 
-      if (result.isOk) {
+      if (result.success) {
         showToast('Kegiatan berhasil dihapus!', 'success');
+        await loadAllData();
       } else {
-        showToast('Gagal menghapus kegiatan', 'error');
+        showToast('Gagal menghapus kegiatan: ' + result.error, 'error');
       }
     }
 
@@ -1025,8 +1104,8 @@
             <div class="kegiatan-menit">Reward: +${k.menit} menit</div>
           </div>
           <div style="display: flex; gap: 10px;">
-            <button class="btn btn-success" onclick="editKegiatanById('${k.__backendId}')">Edit</button>
-            <button class="btn btn-danger" onclick="deleteKegiatanById('${k.__backendId}')">Hapus</button>
+            <button class="btn btn-success" onclick="editKegiatanById('${k.id}')">Edit</button>
+            <button class="btn btn-danger" onclick="deleteKegiatanById('${k.id}')">Hapus</button>
           </div>
         </div>
       `).join('');
@@ -1038,8 +1117,8 @@
             <div class="kegiatan-menit">Sanksi: -${k.menit} menit</div>
           </div>
           <div style="display: flex; gap: 10px;">
-            <button class="btn btn-success" onclick="editKegiatanById('${k.__backendId}')">Edit</button>
-            <button class="btn btn-danger" onclick="deleteKegiatanById('${k.__backendId}')">Hapus</button>
+            <button class="btn btn-success" onclick="editKegiatanById('${k.id}')">Edit</button>
+            <button class="btn btn-danger" onclick="deleteKegiatanById('${k.id}')">Hapus</button>
           </div>
         </div>
       `).join('');
@@ -1048,15 +1127,10 @@
     let currentEditRecord = null;
     let passwordResolve = null;
 
-    window.deleteKegiatanById = function(backendId) {
-      const record = allRecords.find(r => r.__backendId === backendId);
-      if (record) {
-        deleteKegiatan(record);
-      }
-    };
+    window.deleteKegiatanById = deleteKegiatanById;
 
-    window.editKegiatanById = function(backendId) {
-      const record = allRecords.find(r => r.__backendId === backendId);
+    window.editKegiatanById = function(id) {
+      const record = allRecords.find(r => r.id === id);
       if (record) {
         currentEditRecord = record;
         document.getElementById('edit-nama').value = record.nama_kegiatan;
@@ -1103,21 +1177,19 @@
 
       showLoading(true);
 
-      const updatedRecord = {
-        ...currentEditRecord,
+      const result = await updateRecord(currentEditRecord.id, {
         nama_kegiatan: namaUpdate,
         menit: menitUpdate
-      };
-
-      const result = await window.dataSdk.update(updatedRecord);
+      });
       
       showLoading(false);
 
-      if (result.isOk) {
+      if (result.success) {
         showToast('Kegiatan berhasil diupdate!', 'success');
         closeEditModal();
+        await loadAllData();
       } else {
-        showToast('Gagal mengupdate kegiatan', 'error');
+        showToast('Gagal mengupdate kegiatan: ' + result.error, 'error');
       }
     });
 
@@ -1322,5 +1394,5 @@
 
     init();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a8957344402577a',t:'MTc2NDgzMDcyMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a89782d67a10fe2',t:'MTc2NDgzMjA3NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
