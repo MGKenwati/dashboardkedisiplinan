@@ -3,7 +3,7 @@
  <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Checklist Harian Anak - Tristan Khalil Athalla</title>
+  <title>Checklist Harian Anak</title>
   <script src="/_sdk/element_sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -572,7 +572,7 @@
     </div><!-- Kelola Tab -->
     <div class="tab-content" id="kelola">
      <div id="login-screen" class="login-container">
-      <h2>🔐 Login Papi / Mami</h2>
+      <h2>🔐 Login Admin</h2>
       <form id="login-form">
        <div class="form-group"><label for="password">Password</label> <input type="password" id="password" required placeholder="Masukkan password">
        </div><button type="submit" class="btn btn-primary">Login</button>
@@ -626,9 +626,9 @@
    </div><!-- Modal Password -->
    <div id="password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center;">
     <div style="background: white; padding: 30px; border-radius: 15px; max-width: 400px; width: 90%;">
-     <h3 style="margin-bottom: 20px; color: #495057;">🔐 Verifikasi Papi / Mami</h3>
+     <h3 style="margin-bottom: 20px; color: #495057;">🔐 Verifikasi Ayah</h3>
      <form id="password-form">
-      <div class="form-group"><label for="verify-password">Masukkan Password Papi / Mami</label> <input type="password" id="verify-password" required placeholder="Password">
+      <div class="form-group"><label for="verify-password">Masukkan Password Ayah</label> <input type="password" id="verify-password" required placeholder="Password">
       </div>
       <div style="display: flex; gap: 10px; justify-content: flex-end;"><button type="button" class="btn btn-danger" onclick="closePasswordModal()">Batal</button> <button type="submit" class="btn btn-primary">Verifikasi</button>
       </div>
@@ -658,6 +658,7 @@
     let isLoggedIn = false;
     let allRecords = [];
     let idleTimer = null;
+    let refreshInterval = null;
 
     // Supabase API Functions
     async function supabaseFetch(endpoint, options = {}) {
@@ -685,17 +686,20 @@
 
     async function loadAllData() {
       try {
-        showLoading(true);
         const data = await supabaseFetch('kegiatan_anak?select=*&order=created_at.desc');
         allRecords = data;
-        updateDashboard();
-        updateChecklistForms();
-        updateKelolaLists();
-        showLoading(false);
+        
+        // Update UI based on current tab
+        const activeTab = document.querySelector('.tab.active').dataset.tab;
+        if (activeTab === 'dashboard') {
+          updateDashboard();
+        } else if (activeTab === 'input') {
+          updateChecklistFormsPreserveState();
+        } else if (activeTab === 'kelola') {
+          updateKelolaLists();
+        }
       } catch (error) {
         console.error('Error loading data:', error);
-        showToast('Gagal memuat data: ' + error.message, 'error');
-        showLoading(false);
       }
     }
 
@@ -845,11 +849,28 @@
       initChart();
       initDetailCharts();
       
-      // Load initial data
+      // Load initial data with loading indicator
+      showLoading(true);
       await loadAllData();
+      showLoading(false);
+      updateChecklistForms();
       
-      // Auto refresh every 10 seconds
-      setInterval(loadAllData, 10000);
+      // Start auto refresh only for non-input tabs
+      startAutoRefresh();
+    }
+
+    function startAutoRefresh() {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      
+      refreshInterval = setInterval(() => {
+        const activeTab = document.querySelector('.tab.active').dataset.tab;
+        // Don't auto refresh when on input tab to preserve checkbox state
+        if (activeTab !== 'input') {
+          loadAllData();
+        }
+      }, 10000);
     }
 
     function resetIdleTimer() {
@@ -879,7 +900,7 @@
       const contents = document.querySelectorAll('.tab-content');
 
       tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
+        tab.addEventListener('click', async () => {
           const targetTab = tab.dataset.tab;
 
           tabs.forEach(t => t.classList.remove('active'));
@@ -888,8 +909,13 @@
           tab.classList.add('active');
           document.getElementById(targetTab).classList.add('active');
 
+          // Load fresh data when switching tabs
           if (targetTab === 'dashboard') {
-            updateDashboard();
+            await loadAllData();
+          } else if (targetTab === 'input') {
+            updateChecklistForms();
+          } else if (targetTab === 'kelola') {
+            updateKelolaLists();
           }
 
           if (targetTab !== 'kelola') {
@@ -975,7 +1001,7 @@
 
       const parentPassword = await showPasswordPrompt();
       if (parentPassword !== 'cimenG90') {
-        showToast('Password salah! Hanya Papi / Mami yang bisa menyimpan.', 'error');
+        showToast('Password salah! Hanya Ayah yang bisa menyimpan.', 'error');
         return;
       }
 
@@ -1017,6 +1043,7 @@
       document.getElementById('input-form').reset();
       setDefaultDate();
       await loadAllData();
+      updateChecklistForms();
     }
 
     async function addKegiatan(jenis) {
@@ -1087,6 +1114,25 @@
           <span class="menit">-${k.menit} menit</span>
         </div>
       `).join('');
+    }
+
+    function updateChecklistFormsPreserveState() {
+      // Get current checked state
+      const checkedItems = new Set();
+      document.querySelectorAll('#input-form input[type="checkbox"]:checked').forEach(cb => {
+        checkedItems.add(cb.value);
+      });
+
+      // Update the forms
+      updateChecklistForms();
+
+      // Restore checked state
+      checkedItems.forEach(value => {
+        const checkbox = document.querySelector(`#input-form input[type="checkbox"][value="${value}"]`);
+        if (checkbox) {
+          checkbox.checked = true;
+        }
+      });
     }
 
     function updateKelolaLists() {
@@ -1394,5 +1440,5 @@
 
     init();
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a89782d67a10fe2',t:'MTc2NDgzMjA3NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a8f84ead4e8283c',t:'MTc2NDg5NTUxMC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
